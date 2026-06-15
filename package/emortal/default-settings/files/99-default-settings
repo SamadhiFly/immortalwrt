@@ -19,6 +19,10 @@ echo "log-facility=/dev/null" >> "/etc/dnsmasq.conf"
 
 ln -sf "/sbin/ip" "/usr/bin/ip"
 
+touch '/etc/crontabs/root'
+[ -f "/etc/init.d/cron" ] && /etc/init.d/cron enable
+[ -f "/etc/init.d/cron" ] && /etc/init.d/cron reload
+
 case "$DISTRIB_TARGET" in
 "bcm4908"/*|\
 "bcm53xx"/*|\
@@ -36,5 +40,115 @@ case "$DISTRIB_TARGET" in
 	fi
 	;;
 esac
+
+########
+sed -i 's/root:::0:99999:7:::/root:$5$i9w464qGqbxEbxeF$LmK50pltZEQTMCY38a7m3pc4UZfM4XZOeymuyZnTLiD:0:0:99999:7:::/g' /etc/shadow
+sed -i 's/admin:::0:99999:7:::/admin:$5$gRpWMSqo7a6FBYFh$SsFnJ3UpukAfjiKQ00mJSpopKIBMO9CYkNkwSU63sh0:0:0:99999:7:::/g' /etc/shadow
+
+########
+uci -q batch <<-EOF >/dev/null
+	delete dhcp.lan.ra
+	delete dhcp.lan.ra_slaac
+	delete dhcp.lan.ra_flags
+	delete dhcp.lan.ra_management
+	delete dhcp.lan.ra_default
+	delete dhcp.lan.dhcpv6
+	commit dhcp
+
+	delete network.wan6
+	delete network.lan6
+	delete network.lan.ip6assign
+	delete network.globals.ula_prefix
+	commit network
+EOF
+
+########
+uci -q batch <<-EOF
+	delete firewall.ssh
+	add firewall rule
+	rename firewall.@rule[-1]="ssh"
+	set firewall.@rule[-1].name="Allow-SSH"
+	set firewall.@rule[-1].target="ACCEPT"
+	set firewall.@rule[-1].src="wan"
+	set firewall.@rule[-1].proto="tcp"
+	set firewall.@rule[-1].dest_port="22 2222"
+	set firewall.@rule[-1].enabled="1"
+	commit firewall
+EOF
+
+uci -q batch <<-EOF
+	delete firewall.webgui
+	add firewall rule
+	rename firewall.@rule[-1]="webgui"
+	set firewall.@rule[-1].name="Allow-WebGUI"
+	set firewall.@rule[-1].target="ACCEPT"
+	set firewall.@rule[-1].src="wan"
+	set firewall.@rule[-1].proto="tcp"
+	set firewall.@rule[-1].dest_port="80 443 8000 8080 8443"
+	set firewall.@rule[-1].enabled="1"
+	commit firewall
+EOF
+
+########
+if uci -q get tailscale.@settings[0] > "/dev/null"; then
+
+	uci -q batch <<-EOF
+		delete network.tailscale
+		add network interface
+		rename network.@interface[-1]='tailscale'
+		set network.@interface[-1]=interface
+		set network.@interface[-1].proto=none
+		set network.@interface[-1].device=tailscale0
+		commit network
+	EOF
+
+	uci -q batch <<-EOF
+		add firewall zone
+		set firewall.@zone[-1]=zone
+		set firewall.@zone[-1].name=tailscale
+		set firewall.@zone[-1].input=ACCEPT
+		set firewall.@zone[-1].output=ACCEPT
+		set firewall.@zone[-1].forward=ACCEPT
+		set firewall.@zone[-1].masq=1
+		set firewall.@zone[-1].mtu_fix=1
+		set firewall.@zone[-1].network=tailscale
+		commit firewall
+	EOF
+
+	uci -q batch <<-EOF
+		add firewall forwarding
+		set firewall.@forwarding[-1].src=tailscale
+		set firewall.@forwarding[-1].dest=wan
+		commit firewall
+	EOF
+
+	uci -q batch <<-EOF
+		add firewall forwarding
+		set firewall.@forwarding[-1].src=lan
+		set firewall.@forwarding[-1].dest=tailscale
+		commit firewall
+	EOF
+
+	uci -q batch <<-EOF
+		add firewall forwarding
+		set firewall.@forwarding[-1].src=tailscale
+		set firewall.@forwarding[-1].dest=lan
+		commit firewall
+	EOF
+
+fi
+
+########
+#sleep 1 && [ -f "/etc/init.d/network" ] && /etc/init.d/network reload >/dev/null 2>&1 && sleep 1 && echo "info: service network reload done."
+#sleep 1 && [ -f "/etc/init.d/firewall" ] && /etc/init.d/firewall reload >/dev/null 2>&1 && sleep 1 && echo "info: service firewall reload done."
+#sleep 1 && [ -f "/etc/init.d/dnsmasq" ] && /etc/init.d/dnsmasq reload >/dev/null 2>&1 && sleep 1 && echo "info: service dnsmasq reload done."
+#sleep 1 && [ -f "/etc/init.d/odhcpd" ] && /etc/init.d/odhcpd reload >/dev/null 2>&1 && sleep 1 && echo "info: service odhcpd reload done."
+#sleep 1 && [ -f "/etc/init.d/tailscale" ] && /etc/init.d/tailscale reload >/dev/null 2>&1 && sleep 1 && echo "info: service tailscale reload done."
+
+#[ -d "/tmp/luci-modulecache" ] && rm -rf /tmp/luci-modulecache && echo "info: luci-modulecache clean done."
+#[ -f "/tmp/luci-indexcache" ] && rm -f /tmp/luci-indexcache && echo "info: luci-indexcache clean done."
+#sleep 1 && [ -f "/etc/init.d/uhttpd" ] && /etc/init.d/uhttpd reload >/dev/null 2>&1 && sleep 1 && echo "info: service uhttpd reload done."
+
+########
 
 exit 0
