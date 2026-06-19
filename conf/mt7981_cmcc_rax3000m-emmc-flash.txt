@@ -1,0 +1,50 @@
+# mt7981_cmcc_rax3000m-emmc 分区表 BL2 UBOOT 刷写步骤
+
+### 刷写 GPT
+dd if=mt7981_cmcc_rax3000m-emmc-gpt.bin of=/dev/mmcblk0 bs=512 seek=0 count=34 conv=fsync
+
+### 刷写 BL2 
+echo 0 > /sys/block/mmcblk0boot0/force_ro
+dd if=/dev/zero of=/dev/mmcblk0boot0 bs=512 count=8192 conv=fsync
+dd if=mt7981_cmcc_rax3000m-emmc-preloader.bin of=/dev/mmcblk0boot0 bs=512 conv=fsync
+
+### 刷写 uboot 
+dd if=/dev/zero of=/dev/mmcblk0 bs=512 seek=13312 count=8192 conv=fsync
+dd if=mt7981_cmcc_rax3000m-emmc-fip-fit.bin of=/dev/mmcblk0 bs=512 seek=13312 conv=fsync
+
+### 使用 gdisk 对 GPT 分区表进行重建或恢复
+r     → 进入恢复菜单
+c     → 用备份 GPT 头覆盖主 GPT 头（修复开头可能损坏的部分）
+e     → 用修复后的主 GPT 头再覆盖备份 GPT 头（确保两份完全一致）
+w     → 写入磁盘
+
+### 查看分区状态
+root@LWrt:/tmp# gdisk -l /dev/mmcblk0
+GPT fdisk (gdisk) version 1.0.10
+
+Partition table scan:
+  MBR: protective
+  BSD: not present
+  APM: not present
+  GPT: present
+
+Found valid GPT with protective MBR; using GPT.
+Disk /dev/mmcblk0: 122126336 sectors, 58.2 GiB
+Sector size (logical/physical): 512/512 bytes
+Disk identifier (GUID): 5452574F-2211-4433-5566-778899AABB00
+Partition table holds up to 128 entries
+Main partition table begins at sector 2 and ends at sector 33
+First usable sector is 34, last usable sector is 122126302
+Partitions will be aligned on 2-sector boundaries
+Total free space is 44033 sectors (21.5 MiB)
+
+Number  Start (sector)    End (sector)  Size       Code  Name
+   1            8192            9215   512.0 KiB   8300  ubootenv
+   2            9216           13311   2.0 MiB     8300  factory
+   3           13312           21503   4.0 MiB     EF00  fip
+   4           24576           90111   32.0 MiB    EF00  recovery
+   5          131072          745471   300.0 MiB   FFFF  production
+   6          745472       122126301   57.9 GiB    8300  Linux filesystem
+ 128              34            8191   4.0 MiB     EF02
+root@LWrt:/tmp#
+
